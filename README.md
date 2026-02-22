@@ -9,7 +9,7 @@
 **40 weaponized penetration testing one-liners wrapped in an interactive Python CLI. Set your target once, browse by category, search by keyword, and copy ready-to-fire commands with the domain already swapped in -- or grab the raw template with `target.com` intact.**
 
 ![Python 3.6+](https://img.shields.io/badge/python-3.6%2B-blue)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![Commands: 40](https://img.shields.io/badge/commands-40-red)
 ![Platform: Linux/macOS/Windows](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
@@ -139,7 +139,7 @@ The one-liners themselves call external tools. These are **not** bundled -- inst
   1-1-LinerToRuleThemAll.py   # Main script (self-contained)
   banner.svg                   # GitHub README header graphic
   README.md                    # This file
-  LICENSE                      # MIT license
+  LICENSE                      # GPL-3.0 license
 ```
 
 ---
@@ -162,4 +162,4 @@ The one-liners themselves call external tools. These are **not** bundled -- inst
 
 ## License
 
-MIT -- see [LICENSE](LICENSE).
+GPL-3.0 -- see [LICENSE](LICENSE).
