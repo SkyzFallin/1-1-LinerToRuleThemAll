@@ -27,7 +27,10 @@ r"""
 ===============================================================================
 """
 
+import argparse
+import json
 import os
+import re
 import sys
 import shutil
 
@@ -491,10 +494,127 @@ CATEGORIES = [
     "ADVANCED EXPLOITATION",
 ]
 
+RISK_BY_CATEGORY = {
+    "EXTREME RECONNAISSANCE": "LOW",
+    "WEAPONIZED AUTHENTICATION ATTACKS": "HIGH",
+    "INJECTION ATTACKS (EXTREME)": "HIGH",
+    "SSRF & DESERIALIZATION": "HIGH",
+    "LOGIC FLAWS & BUSINESS LOGIC": "MEDIUM",
+    "FULL EXPLOITATION CHAINS": "CRITICAL",
+    "ADVANCED EVASION & BYPASSES": "HIGH",
+    "ADVANCED EXPLOITATION": "CRITICAL",
+}
+
+NOISE_BY_CATEGORY = {
+    "EXTREME RECONNAISSANCE": "MEDIUM",
+    "WEAPONIZED AUTHENTICATION ATTACKS": "HIGH",
+    "INJECTION ATTACKS (EXTREME)": "MEDIUM",
+    "SSRF & DESERIALIZATION": "MEDIUM",
+    "LOGIC FLAWS & BUSINESS LOGIC": "HIGH",
+    "FULL EXPLOITATION CHAINS": "HIGH",
+    "ADVANCED EVASION & BYPASSES": "HIGH",
+    "ADVANCED EXPLOITATION": "HIGH",
+}
+
+PROFILES_BY_CATEGORY = {
+    "EXTREME RECONNAISSANCE": ["web", "api", "cloud"],
+    "WEAPONIZED AUTHENTICATION ATTACKS": ["web", "api", "auth"],
+    "INJECTION ATTACKS (EXTREME)": ["web", "api"],
+    "SSRF & DESERIALIZATION": ["web", "api", "cloud"],
+    "LOGIC FLAWS & BUSINESS LOGIC": ["web", "api", "auth"],
+    "FULL EXPLOITATION CHAINS": ["web", "api", "cloud", "auth", "graphql"],
+    "ADVANCED EVASION & BYPASSES": ["web", "api", "graphql"],
+    "ADVANCED EXPLOITATION": ["web", "api", "graphql", "auth"],
+}
+
+PROFILE_OPTIONS = ["web", "api", "cloud", "auth", "graphql"]
+
 
 # ---------------------------------------------------------------------------
 # HELPERS
 # ---------------------------------------------------------------------------
+
+
+def enrich_commands_with_metadata():
+    """Attach risk/noise/profile metadata to each command."""
+    for cmd in COMMANDS:
+        category = cmd["category"]
+        cmd["risk"] = RISK_BY_CATEGORY.get(category, "UNKNOWN")
+        cmd["noise"] = NOISE_BY_CATEGORY.get(category, "UNKNOWN")
+        cmd["profiles"] = PROFILES_BY_CATEGORY.get(category, [])
+
+
+def get_cmds_by_profile(profile):
+    """Return commands tagged for a profile."""
+    profile = profile.lower()
+    return [c for c in COMMANDS if profile in c.get("profiles", [])]
+
+
+def command_with_target(cmd, target):
+    """Replace target placeholder when needed."""
+    if target and target != "target.com":
+        return cmd.replace("target.com", target)
+    return cmd
+
+
+def export_commands(fmt, target, profile=None, out_file=None):
+    """Export commands in JSON or Markdown format."""
+    data = COMMANDS
+    if profile:
+        data = get_cmds_by_profile(profile)
+
+    if fmt == "json":
+        payload = []
+        for c in data:
+            payload.append({
+                "id": c["id"],
+                "category": c["category"],
+                "title": c["title"],
+                "risk": c.get("risk"),
+                "noise": c.get("noise"),
+                "profiles": c.get("profiles", []),
+                "raw": c["cmd"],
+                "targeted": command_with_target(c["cmd"], target),
+            })
+        output = json.dumps(payload, indent=2)
+    else:
+        lines = ["# 1-1-LinerToRuleThemAll Export", ""]
+        lines.append(f"Target: `{target}`")
+        if profile:
+            lines.append(f"Profile: `{profile}`")
+        lines.append("")
+        for c in data:
+            lines.extend([
+                f"## #{c['id']} - {c['title']}",
+                f"- Category: {c['category']}",
+                f"- Risk: {c.get('risk', 'UNKNOWN')}",
+                f"- Noise: {c.get('noise', 'UNKNOWN')}",
+                f"- Profiles: {', '.join(c.get('profiles', []))}",
+                "",
+                "```bash",
+                command_with_target(c["cmd"], target),
+                "```",
+                "",
+            ])
+        output = "\n".join(lines)
+
+    if out_file:
+        with open(out_file, "w", encoding="utf-8") as f:
+            f.write(output)
+        print(f"\n  [*] Exported {len(data)} commands to: {out_file}\n")
+    else:
+        print(output)
+
+
+def parse_args():
+    """CLI arguments for non-interactive export mode."""
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--target", default="target.com", help="Target used for command substitution")
+    parser.add_argument("--profile", choices=PROFILE_OPTIONS, help="Filter by profile tag")
+    parser.add_argument("--export", dest="export_fmt", choices=["json", "md"], help="Export commands")
+    parser.add_argument("--out", help="Write export output to file")
+    return parser.parse_args()
+
 
 def get_term_width():
     """Get terminal width, default 80."""
@@ -564,6 +684,7 @@ def print_category_menu():
     for i, cat in enumerate(CATEGORIES, 1):
         print(f"  [{i}] {cat}")
     print(f"  [A] ALL COMMANDS")
+    print(f"  [P] PROFILE filter")
     print(f"  [S] SEARCH commands by keyword")
     print(f"  [Q] QUIT")
     hr()
@@ -596,7 +717,7 @@ def display_command_list(cmds):
         if c["category"] != current_cat:
             current_cat = c["category"]
             print(f"\n  --- {current_cat} ---")
-        print(f"  [{c['id']:>2}] {c['title']}")
+        print(f"  [{c['id']:>2}] {c['title']}  [risk:{c.get('risk','?')} | noise:{c.get('noise','?')}]")
 
 
 def display_single_command(cmd, target=None):
@@ -604,6 +725,7 @@ def display_single_command(cmd, target=None):
     hr("=")
     print(f"  #{cmd['id']} | {cmd['category']}")
     print(f"  {cmd['title']}")
+    print(f"  Risk: {cmd.get('risk', 'UNKNOWN')} | Noise: {cmd.get('noise', 'UNKNOWN')} | Profiles: {', '.join(cmd.get('profiles', []))}")
     hr("=")
 
     raw = cmd["cmd"]
@@ -615,7 +737,7 @@ def display_single_command(cmd, target=None):
     print()
 
     if target and target.lower() != "target.com":
-        replaced = raw.replace("target.com", target)
+        replaced = command_with_target(raw, target)
         # Also handle api.target.com -> api.<target>
         print(f"  [TARGETED COMMAND] (target: {target})")
         print("  " + "-" * 40)
@@ -693,14 +815,24 @@ def copy_to_clipboard(text):
 # ---------------------------------------------------------------------------
 
 def main():
+    enrich_commands_with_metadata()
+    args = parse_args()
+
+    if not is_valid_target(args.target):
+        print("[!] Invalid --target format. Use a domain, hostname, or URL-like host (optionally with port).")
+        sys.exit(1)
+
+    if args.export_fmt:
+        export_commands(args.export_fmt, args.target, profile=args.profile, out_file=args.out)
+        return
+
     os.system("clear" if os.name != "nt" else "cls")
     banner()
     disclaimer()
 
     # --- Get target ---
-    print("\n  Enter the target domain (or press Enter to keep 'target.com'):")
-    target_input = input("  > ").strip()
-    target = target_input if target_input else "target.com"
+    print(f"\n  Enter the target domain (or press Enter to keep '{args.target}'):")
+    target = prompt_for_target(default_target=args.target)
 
     print(f"\n  [*] Target set to: {target}")
     if target == "target.com":
@@ -714,6 +846,28 @@ def main():
         if choice == "Q":
             print("\n  Stay legal. Stay sharp. Exiting.\n")
             sys.exit(0)
+
+        elif choice == "P":
+            print(f"  Profiles: {', '.join(PROFILE_OPTIONS)}")
+            profile = input("  Select profile > ").strip().lower()
+            if profile not in PROFILE_OPTIONS:
+                print("  [!] Invalid profile.")
+                continue
+            results = get_cmds_by_profile(profile)
+            display_command_list(results)
+            if not results:
+                continue
+            print()
+            sel = input("  Enter command # to view (or B to go back) > ").strip().upper()
+            if sel == "B":
+                continue
+            try:
+                sel_id = int(sel)
+                cmd_obj = next((c for c in COMMANDS if c["id"] == sel_id), None)
+                if cmd_obj:
+                    _command_viewer(cmd_obj, target)
+            except ValueError:
+                print("  [!] Invalid selection.")
 
         elif choice == "S":
             keyword = input("  Search keyword > ").strip()
@@ -774,7 +928,7 @@ def _command_viewer(cmd_obj, target):
         display_single_command(cmd_obj, target)
         action = input("  Action > ").strip().upper()
         if action == "C":
-            out = cmd_obj["cmd"].replace("target.com", target) if target != "target.com" else cmd_obj["cmd"]
+            out = command_with_target(cmd_obj["cmd"], target)
             copy_to_clipboard(out)
         elif action == "R":
             copy_to_clipboard(cmd_obj["cmd"])
@@ -794,6 +948,26 @@ def _command_viewer(cmd_obj, target):
 def change_target_hint():
     """Hint text shown in menus (not implemented as separate menu item to keep it clean)."""
     pass
+
+
+def is_valid_target(target):
+    """Allow simple host/domain/IP style values for safe replacement in one-liners."""
+    if len(target) > 253:
+        return False
+    # Optional scheme; host/domain labels, dots, dashes, wildcard prefix, and optional port.
+    pattern = r"^(?:https?://)?(?:\*\.)?[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*(?::\d{1,5})?$"
+    return re.match(pattern, target) is not None
+
+
+def prompt_for_target(default_target="target.com"):
+    """Prompt repeatedly until a valid target is provided (or fallback to default placeholder)."""
+    while True:
+        target_input = input("  > ").strip()
+        if not target_input:
+            return default_target
+        if is_valid_target(target_input):
+            return target_input
+        print("  [!] Invalid target format. Use a domain, hostname, or URL-like host (optionally with port).")
 
 
 if __name__ == "__main__":
