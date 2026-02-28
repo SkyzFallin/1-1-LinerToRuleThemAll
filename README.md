@@ -75,6 +75,7 @@ From there, the main menu lets you:
   [7] ADVANCED EVASION & BYPASSES
   [8] ADVANCED EXPLOITATION
   [A] ALL COMMANDS
+  [P] PROFILE filter
   [S] SEARCH commands by keyword
   [Q] QUIT
 ```
@@ -103,6 +104,25 @@ Select a category to browse, pick a command by number, and you get:
 ```
 
 Clipboard support auto-detects `xclip`, `xsel`, or `pbcopy`. If none are available it prints the command in a clean block for manual copy/paste.
+
+---
+
+
+## Export Mode (JSON / Markdown)
+
+You can now export the command catalog non-interactively for notes, reports, or automation:
+
+```bash
+# Export all commands with target substitution
+python3 1-1-LinerToRuleThemAll.py --target example.com --export json --out commands.json
+
+# Export only cloud-profile commands in Markdown
+python3 1-1-LinerToRuleThemAll.py --target example.com --profile cloud --export md --out cloud-playbook.md
+```
+
+Available profiles: `web`, `api`, `cloud`, `auth`, `graphql`.
+
+Each command now includes lightweight metadata in the interactive list/view: **risk**, **noise**, and **profiles**.
 
 ---
 
